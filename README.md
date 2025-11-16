@@ -44,7 +44,7 @@ To run this script, simply execute:
 python ablation.py
 ```
 >[!NOTE]
->The script name in your repository might be different. Please adjust the command accordingly.
+>*The script name in your repository might be different. Please adjust the command accordingly.*
 
 The script will print the final performance metrics to the console.
 
