@@ -1,5 +1,5 @@
 # ==============================================================================
-# 1. IMPORT E CONFIGURAZIONE DEGLI ESPERIMENTI
+# 1. IMPORTS AND EXPERIMENT CONFIGURATION
 # ==============================================================================
 import pandas as pd
 import numpy as np
@@ -45,24 +45,23 @@ CLASSIFIERS_TO_TEST = [
 
 
 # ==============================================================================
-# 2. FUNZIONI DI PREPARAZIONE DEI DATI
+# 2. DATA PREPARATION FUNCTIONS
 # ==============================================================================
-
 CHUNKSIZE = 50000
 
 def load_and_preprocess_data(review_path, meta_path, sample_frac=None, min_user_interactions=5, min_item_interactions=3):
-    # Il processo si svolge in 3 passate:
-    # 1.  PASSATA 1: Identifica gli utenti attivi (>= min_user_interactions) basandosi sull'intero dataset.
-    # 2.  PASSATA 2: Calcola i conteggi dei prodotti considerando SOLO le interazioni degli utenti
-    #     identificati nella Passata 1. Identifica i prodotti attivi (>= min_item_interactions).
-    # 3.  PASSATA 3: Costruisce il DataFrame finale usando i set stabili di utenti e prodotti.
+     # The process is carried out in 3 phases:
+    # 1. PHASE 1: Identify active users (>= min_user_interactions) based on the entire dataset.
+    # 2. PHASE 2: Calculate product counts considering ONLY the interactions of users
+    #    identified in Pass 1. Identify active products (>= min_item_interactions).
+    # 3. PHASE 3: Build the final DataFrame using the stable sets of users and products.
 
-    print(f"\n[AVVIO] Preprocessing con filtro sequenziale su " + review_path)
-    print(f"  - Criteri: Utenti >= {min_user_interactions}, Prodotti >= {min_item_interactions}")
+    print(f"\n[START] Preprocessing with sequential filtering on " + review_path)
+    print(f"  - Criteria: Users  >= {min_user_interactions}, Prodotti >= {min_item_interactions}")
     if sample_frac:
-        print(f"--- MODALITÀ CAMPIONAMENTO ATTIVA (frazione={sample_frac}) ---")
+        print(f"--- SAMPLING MODE ACTIVE (fraction={sample_frac}) ---")
 
-    print("\n  - Caricamento e filtro iniziale metadati...")
+    print("\n  - Loading and initial metadata filtering...")
     meta = pd.read_json(meta_path, lines=True, compression='gzip')
     meta = meta[['parent_asin', 'title', 'description', 'price', 'categories']]
     meta.columns = ['product_id', 'title', 'description', 'price', 'categories']
@@ -70,7 +69,7 @@ def load_and_preprocess_data(review_path, meta_path, sample_frac=None, min_user_
     meta_filtered_title = meta[meta['title'].str.len() > 10].copy()
     valid_products_by_title = set(meta_filtered_title['product_id'])
 
-    # --- PASSATA 1: IDENTIFICAZIONE UTENTI ATTIVI ---
+    # --- PHASE 1: IDENTIFY ACTIVE USERS ---
     print("\n[FASE 1] Passata 1: Identificazione degli utenti attivi...")
     user_counts = Counter()
     review_iterator = pd.read_json(review_path, lines=True, compression='gzip', chunksize=CHUNKSIZE)
@@ -82,29 +81,28 @@ def load_and_preprocess_data(review_path, meta_path, sample_frac=None, min_user_
     active_users = {user for user, count in user_counts.items() if count >= min_user_interactions}
     print(f"  - Identificati {len(active_users)} utenti attivi.")
 
-    # --- PASSATA 2: IDENTIFICAZIONE PRODOTTI ATTIVI (basata sugli utenti attivi) ---
-    print("\n[FASE 2] Passata 2: Identificazione dei prodotti attivi (basata sugli utenti della Fase 1)...")
+    # --- PHASE 2: IDENTIFY ACTIVE PRODUCTS (based on active users) ---
+    print("\n[FASE 2]  PHASE 2: IDENTIFY ACTIVE PRODUCTS (based on PHASE 1 users)...")
     product_counts = Counter()
     review_iterator = pd.read_json(review_path, lines=True, compression='gzip', chunksize=CHUNKSIZE)
     for i, chunk in enumerate(review_iterator):
-        print(f"\r    - Conteggio prodotti nel blocco {i+1}...", end="")
+        print(f"\r    - Counting products in chunk {i+1}...", end="")
         chunk_filtered_users = chunk[chunk['user_id'].isin(active_users)]
         product_counts.update(chunk_filtered_users['asin'])
-    print("\n  - Conteggio prodotti completato.")
+    print("\n  - Product count completed.")
 
     active_products = {prod for prod, count in product_counts.items() if count >= min_item_interactions}
-    print(f"  - Identificati {len(active_products)} prodotti attivi.")
+    print(f"  - Identified {len(active_products)} active products.")
     del product_counts
     gc.collect()
 
     final_active_products = active_products.intersection(valid_products_by_title)
-    print(f"  - {len(final_active_products)} prodotti rimangono dopo il filtro sul titolo.")
+    print(f"  - {len(final_active_products)} products remain after title filter.")
 
-        # --- FASE DI CAMPIONAMENTO ---
+        # --- SAMPLING PHASE ---
     if sample_frac is not None and 0 < sample_frac < 1:
-        print("\n[FASE X] Esecuzione del campionamento stratificato...")
+        print("\n[FASE X] Performing stratified sampling...")
 
-        # Usiamo i conteggi della Passata 1 per stratificare gli utenti
         active_user_counts_df = pd.DataFrame(
             [(user, count) for user, count in user_counts.items() if user in active_users],
             columns=['user_id', 'review_count']
@@ -113,7 +111,7 @@ def load_and_preprocess_data(review_path, meta_path, sample_frac=None, min_user_
         try:
             strata = pd.qcut(active_user_counts_df['review_count'], q=4, labels=False, duplicates='drop')
         except ValueError:
-            print("    - Attenzione: impossibile creare 4 strati, fallback a 2.")
+            print("    - Warning: could not create 4 strata, falling back to 2.")
             strata = pd.qcut(active_user_counts_df['review_count'], q=2, labels=False, duplicates='drop')
 
         sampled_user_ids = strata.groupby(strata).apply(
@@ -121,20 +119,20 @@ def load_and_preprocess_data(review_path, meta_path, sample_frac=None, min_user_
         ).index.get_level_values(1)
 
         final_user_set = set(sampled_user_ids)
-        print(f"    - Utenti prima del campionamento: {len(active_users)}. Utenti campionati: {len(final_user_set)}.")
+        print(f"    - Users before sampling: {len(active_users)}. Sampled users: {len(final_user_set)}.")
     else:
-        # Se non c'è campionamento, usiamo tutti gli utenti attivi
+        # If no sampling, use all active users
         final_user_set = active_users
 
     del user_counts 
     gc.collect()
 
-    # --- PASSATA 3: COSTRUZIONE DEL DATAFRAME FINALE ---
-    print("\n[FASE 3] Passata 3: Costruzione del DataFrame finale...")
+    # --- PHASE 3: BUILD FINAL DATAFRAME ---
+    print("\n[FASE 3] PHASE 3: Building the final DataFrame...")
     filtered_chunks = []
     review_iterator = pd.read_json(review_path, lines=True, compression='gzip', chunksize=CHUNKSIZE)
     for i, chunk in enumerate(review_iterator):
-        print(f"\r    - Filtraggio del blocco {i+1}...", end="")
+        print(f"\r    - Filtering chunk {i+1}...", end="")
 
         chunk = chunk[chunk['user_id'].isin(final_user_set)]
         chunk = chunk[chunk['asin'].isin(final_active_products)]
@@ -149,29 +147,29 @@ def load_and_preprocess_data(review_path, meta_path, sample_frac=None, min_user_
         if not merged_chunk.empty:
             filtered_chunks.append(merged_chunk)
 
-    print("\n  - Concatenazione dei blocchi finali...")
+    print("\n  - Concatenating final chunks...")
     if not filtered_chunks:
-        raise ValueError("Nessun dato rimasto dopo il filtraggio.")
+        raise ValueError("No data left after filtering.")
 
     df_filtered = pd.concat(filtered_chunks, ignore_index=True)
 
-    # --- Statistiche finali ---
+    # --- Final statistics ---
     print("\n" + "="*50)
-    print("      STATISTICHE DATASET FINALE     ")
+    print("      FINAL DATASET STATISTICS     ")
     print("="*50)
     final_users = df_filtered['user_id'].nunique()
     final_reviews = len(df_filtered)
-    print(f"  - Numero Totale di Recensioni: {final_reviews}")
-    print(f"  - Utenti Unici: {final_users}")
-    print(f"  - Prodotti Unici: {df_filtered['product_id'].nunique()}")
-    print(f"  - Recensioni Medie per Utente: {final_reviews / final_users:.2f}")
+    print(f"  - Total Number of Reviews: {final_reviews}")
+    print(f"  - Unique Users: {final_users}")
+    print(f"  - Unique Products: {df_filtered['product_id'].nunique()}")
+    print(f"  - Average Reviews per User: {final_reviews / final_users:.2f}")
     print("="*50 + "\n")
 
     return df_filtered
 
 def split_data_by_user(df):
-    # Divide il dataset in train, validation e test set mantenendo gli utenti separati.
-    print("[FASE 1] Suddivisione degli utenti in train/val/test...")
+    # Splits the dataset into train, validation, and test sets, keeping users disjoint.
+    print("[PHASE 1] Splitting users into train/val/test...")
     all_users = df['user_id'].unique()
     train_val_users, test_users = train_test_split(all_users, test_size=0.15, random_state=42)
     train_users, val_users = train_test_split(train_val_users, test_size=(0.10/0.85), random_state=42)
@@ -180,21 +178,21 @@ def split_data_by_user(df):
     val_data = df[df['user_id'].isin(val_users)].copy()
     test_data = df[df['user_id'].isin(test_users)].copy()
 
-    print(f"Utenti: {len(train_users)} train, {len(val_users)} validation, {len(test_users)} test.")
+    print(f"Users: {len(train_users)} train, {len(val_users)} validation, {len(test_users)} test.")
     return train_data, val_data, test_data
-
+    
 def generate_embeddings(sbert_model, model_name_str, train_df, val_df, test_df):
-    # Calcola gli embedding per recensioni e prodotti.
-    print(f"[FASE 2] Calcolo embedding con il modello '{model_name_str}'...")
+    # Computes embeddings for reviews and products.
+    print(f"[PHASE 2] Computing embeddings with model '{model_name_str}'...")
 
-    # Embedding delle recensioni
+    # Review embeddings
     for df, name in [(train_df, "Train"), (val_df, "Validation"), (test_df, "Test")]:
-        print(f"  - Calcolo embedding recensioni per il {name} Set...")
+        print(f"  - Computing review embeddings for the {name} Set...")
         texts = df['review_text'].tolist()
         df['review_emb'] = sbert_model.encode(texts, batch_size=64, show_progress_bar=True).tolist()
 
-    # Embedding dei prodotti (calcolati solo sul training set per evitare data leakage)
-    print("  - Calcolo embedding prodotti...")
+    # Product embeddings (computed only on the training set to prevent data leakage)
+    print("  - Computing product embeddings...")
     train_df.loc[:,'description'] = train_df['description'].apply(lambda x: ' '.join(x) if isinstance(x, list) else str(x))
     train_df.loc[:,'product_text'] = train_df['title'].fillna('') + ' ' + train_df['description'].fillna('')
 
@@ -205,9 +203,9 @@ def generate_embeddings(sbert_model, model_name_str, train_df, val_df, test_df):
     return train_df, val_df, test_df, product_profiles
 
 def build_profiles_and_features(df):
-    # Costruisce i profili utente (positivi/negativi, categorie/prezzi preferiti) e i fallback generici.
-    print("[FASE 3] Costruzione profili utente e features...")
-
+    # Builds user profiles (positive/negative, preferred categories/prices) and generic fallbacks.
+    print("[PHASE 3] Building user profiles and features...")
+    
     user_fav_tier = {}
     user_fav_cat = {}
     for user in df['user_id'].unique():
@@ -243,7 +241,7 @@ def build_profiles_and_features(df):
     return df, profiles
 
 def prepare_model_data(df, product_profiles, profiles):
-    # Prepara i vettori di feature (X) e le etichette (y) per il modello.
+    # Prepares the feature vectors (X) and labels (y) for the model.
     x, y = [], []
     EMBEDDING_DIM = len(profiles["fallback_emb"])
 
@@ -283,12 +281,12 @@ def prepare_model_data(df, product_profiles, profiles):
 
 
 # ==============================================================================
-# 3. FUNZIONI DI ADDESTRAMENTO E VALUTAZIONE DEI MODELLI
+# 3. MODEL TRAINING AND EVALUATION FUNCTIONS
 # ==============================================================================
 
 def train_evaluate_xgboost(X_train, y_train, X_val, y_val, X_test, y_test):
-    # Addestra e valuta un classificatore XGBoost.
-    print("  - Addestramento XGBoost...")
+    # Trains and evaluates an XGBoost classifier.
+    print("  - Training XGBoost...")
     count_neg, count_pos = np.sum(y_train == 0), np.sum(y_train == 1)
     scale_pos_weight = (count_neg / count_pos) * 1.5 if count_pos > 0 else 1
 
@@ -317,11 +315,11 @@ def train_evaluate_xgboost(X_train, y_train, X_val, y_val, X_test, y_test):
     model.save_model(model_filename)
     model_size_kb = os.path.getsize(model_filename) / 1024
     os.remove(model_filename)
-    print(f"  - Dimensione modello finale: {model_size_kb:.2f} KB")
+    print(f"  - Final model size: {model_size_kb:.2f} KB")
 
     y_pred = (y_pred_proba > 0.5).astype(int)
 
-    print("  - Risultati XGBoost:")
+    print("  - XGBoost results:")
     print(classification_report(y_test, y_pred, digits=4))
     auc = roc_auc_score(y_test, y_pred_proba)
     print(f"  - AUC sul Test Set: {auc:.4f}")
@@ -334,7 +332,7 @@ def train_evaluate_xgboost(X_train, y_train, X_val, y_val, X_test, y_test):
     }
 
 def create_mlp_model(input_shape):
-    # Definisce l'architettura del modello MLP.
+    # Defines the MLP model architecture.
     model = Sequential([
         Input(shape=(input_shape,)),
         Dense(256, activation='relu'), Dropout(0.4),
@@ -347,8 +345,8 @@ def create_mlp_model(input_shape):
     return model
 
 def train_evaluate_mlp_centralized(X_train, y_train, X_val, y_val, X_test, y_test):
-    # Addestra e valuta un classificatore MLP in modo centralizzato.
-    print("  - Addestramento MLP Centralizzato...")
+    # Trains and evaluates an MLP classifier in a centralized manner.
+    print("  - Training Centralized MLP...")
     model = create_mlp_model(X_train.shape[1])
     early_stopping = EarlyStopping(monitor='val_auc', patience=10, mode='max', restore_best_weights=True)
 
@@ -356,7 +354,7 @@ def train_evaluate_mlp_centralized(X_train, y_train, X_val, y_val, X_test, y_tes
     model.fit(X_train, y_train, validation_data=(X_val, y_val),
               epochs=100, batch_size=128, callbacks=[early_stopping], verbose=0)
     training_time = time.time() - start_time
-    print(f"  - Tempo di addestramento: {training_time:.2f} secondi")
+    print(f"  - Training time: {training_time:.2f} secondi")
 
     start_time_inf = time.time()
     y_pred_proba = model.predict(X_test).flatten()
@@ -366,12 +364,12 @@ def train_evaluate_mlp_centralized(X_train, y_train, X_val, y_val, X_test, y_tes
 
     trainable_params = np.sum([np.prod(v.shape) for v in model.trainable_weights])
     model_size_kb = (trainable_params * 4) / 1024
-    print(f"  - Dimensione modello (stimata): {model_size_kb:.2f} KB")
+    print(f"  - Model size (estimated): {model_size_kb:.2f} KB")
 
-    print("  - Risultati MLP Centralizzato:")
+    print("  - Centralized MLP results:")
     print(classification_report(y_test, y_pred, digits=4))
     auc = roc_auc_score(y_test, y_pred_proba)
-    print(f"  - AUC sul Test Set: {auc:.4f}")
+    print(f"  - AUC on Test Set: {auc:.4f}")
 
     return {
         "auc": auc, "f1_macro": f1_score(y_test, y_pred, average='macro'),
@@ -381,20 +379,19 @@ def train_evaluate_mlp_centralized(X_train, y_train, X_val, y_val, X_test, y_tes
     }
 
 # ==============================================================================
-# 4. NUOVA FUNZIONE PER L'ADDESTRAMENTO FEDERATO
+# 4. FUNCTION FOR FEDERATED TRAINING
 # ==============================================================================
-
 def train_evaluate_federated_mlp(client_features, client_labels, X_val, y_val, X_test, y_test):
-    # Addestra un MLP con FedAvg, ottimizzato per un basso consumo di RAM.
-    print("  - Addestramento MLP Federato...")
+    # Trains an MLP with FedAvg, optimized for low RAM consumption.
+    print("  - Training Federated MLP...")
 
-    # Iperparametri FL
+    # FL Hyperparameters
     COMMUNICATION_ROUNDS = 30
     CLIENTS_PER_ROUND = 20
     LOCAL_EPOCHS = 1
     LOCAL_BATCH_SIZE = 32
 
-    # Inizializzazione dei modelli
+    # Model initialization
     input_shape = client_features[0].shape[1]
     global_model = create_mlp_model(input_shape)
 
@@ -433,7 +430,7 @@ def train_evaluate_federated_mlp(client_features, client_labels, X_val, y_val, X
 
         total_data_size = sum(client_data_sizes)
         if total_data_size == 0:
-            print(" | Nessun dato nel round, skipping.")
+            print(" | No data in this round, skipping.")
             continue
 
         scaling_factors = [size / total_data_size for size in client_data_sizes]
@@ -451,7 +448,7 @@ def train_evaluate_federated_mlp(client_features, client_labels, X_val, y_val, X
         gc.collect()
 
     training_time = time.time() - start_time
-    print(f"  - Tempo di addestramento totale (federato): {training_time:.2f} secondi")
+    print(f"  - Total training time (federated): {training_time:.2f} seconds")
 
     start_time_inf = time.time()
     y_pred_proba = global_model.predict(X_test).flatten()
@@ -460,12 +457,12 @@ def train_evaluate_federated_mlp(client_features, client_labels, X_val, y_val, X
 
     trainable_params = np.sum([np.prod(v.shape) for v in global_model.trainable_weights])
     model_size_kb = (trainable_params * 4) / 1024
-    print(f"  - Dimensione modello (stimata): {model_size_kb:.2f} KB")
+    print(f"  - Model size (estimated): {model_size_kb:.2f} KB")
 
-    print("  - Risultati MLP Federato (ottimizzato):")
+    print("  - Federated MLP Results:")
     print(classification_report(y_test, y_pred, digits=4))
     auc = roc_auc_score(y_test, y_pred_proba)
-    print(f"  - AUC sul Test Set: {auc:.4f}")
+    print(f"  - AUC on Test Set: {auc:.4f}")
 
     return {
         "auc": auc, "f1_macro": f1_score(y_test, y_pred, average='macro'),
@@ -476,7 +473,7 @@ def train_evaluate_federated_mlp(client_features, client_labels, X_val, y_val, X
 
 
 # ==============================================================================
-# 5. ORCHESTRAZIONE DEGLI ESPERIMENTI
+# 5. EXPERIMENT
 # ==============================================================================
 
 def main():
@@ -485,10 +482,10 @@ def main():
 
     for min_interactions in USER_INTERACTION_THRESHOLDS:
         print(f"\n\n{'#'*60}")
-        print(f"### INIZIO CICLO DI ESPERIMENTI CON FILTRO UTENTI >= {min_interactions} ###")
+        print(f"### STARTING EXPERIMENT CYCLE WITH USER FILTER >= {min_interactions} ###")
         print(f"{'#'*60}\n")
 
-        # --- FASE 1: Caricamento e preprocessing ---
+        # --- PHASE 1: Loading and preprocessing ---
         df_filtered = load_and_preprocess_data(
             "Amazon_Fashion.jsonl.gz", 
             "meta_Amazon_Fashion.jsonl.gz",
@@ -496,15 +493,15 @@ def main():
         )
 
         if df_filtered.empty:
-            print(f"Nessun dato per la soglia {min_interactions}. Passo alla successiva.")
+            print(f"No data for threshold {min_interactions}. Skipping to the next.")
             continue
 
-        print("[FASE 1.5] Creazione feature globali (price_tier, category)...")
+        print("[PHASE 1.5] Creating global features (price_tier, category)...")
         df_filtered['specific_category'] = df_filtered['categories'].apply(lambda cat: cat[-1] if isinstance(cat, list) and cat else 'Unknown')
 
-        # Gestione di set di dati piccoli dove lo split potrebbe fallire
+        # Handle small datasets where the split might fail
         if df_filtered['user_id'].nunique() < 3:
-             print(f"Non ci sono abbastanza utenti ({df_filtered['user_id'].nunique()}) per creare train/val/test. Salto la soglia {min_interactions}.")
+             print(f"Not enough users ({df_filtered['user_id'].nunique()}) to create train/val/test splits. Skipping threshold {min_interactions}.")
              continue
 
         train_data, val_data, test_data = split_data_by_user(df_filtered)
@@ -523,7 +520,7 @@ def main():
             df['price_tier'].fillna('medium', inplace=True)
 
         for model_name in EMBEDDING_MODELS_TO_TEST:
-            print(f"\n{'='*25}\nINIZIO ESPERIMENTO CON EMBEDDER: {model_name}\n{'='*25}")
+            print(f"\n{'='*25}\nSTARTING EXPERIMENT WITH EMBEDDER: {model_name}\n{'='*25}")
 
             sbert_model = SentenceTransformer(model_name)
             train_emb, val_emb, test_emb, product_profiles = generate_embeddings(
@@ -531,7 +528,7 @@ def main():
             )
             _, user_profiles = build_profiles_and_features(train_emb)
 
-            print("[FASE 4] Preparazione dati per l'addestramento...")
+            print("[PHASE 4] Preparing data for training...")
             client_data_silos = {user_id: group for user_id, group in train_emb.groupby('user_id')}
             train_users = train_emb['user_id'].unique()
 
@@ -544,20 +541,20 @@ def main():
                     all_client_features.append(x_local)
                     all_client_labels.append(y_local)
 
-            print(f"Dati preparati per {len(all_client_features)} client (utenti informativi).")
+            print(f"Data prepared for {len(all_client_features)} clients (informative users).")
 
             if not all_client_features:
-                 print("Nessun client informativo per l'addestramento. Salto questo embedder.")
+                 print("No informative clients for training. Skipping this embedder.")
                  continue
 
             X_val, y_val = prepare_model_data(val_emb, product_profiles, user_profiles)
             X_test, y_test = prepare_model_data(test_emb, product_profiles, user_profiles)
             X_train_centralized = np.vstack(all_client_features)
             y_train_centralized = np.hstack(all_client_labels)
-            print(f"Dimensioni: Train (centralizzato)={X_train_centralized.shape}, Val={X_val.shape}, Test={X_test.shape}")
+            print(f"Dimensions: Train (centralized)={X_train_centralized.shape}, Val={X_val.shape}, Test={X_test.shape}")
 
             for classifier_name in CLASSIFIERS_TO_TEST:
-                print(f"\n--- [FASE 5] Training con CLASSIFICATORE: {classifier_name.upper()} ---")
+                print(f"\n--- [PHASE 5] Training with CLASSIFIER: {classifier_name.upper()} ---")
 
                 if classifier_name == 'xgboost':
                     metrics = train_evaluate_xgboost(X_train_centralized, y_train_centralized, X_val, y_val, X_test, y_test)
@@ -571,16 +568,16 @@ def main():
                 metrics['classifier'] = classifier_name
                 all_results.append(metrics)
 
-        print(f"\n--- Pulizia memoria prima del prossimo ciclo di esperimenti ---")
+        print(f"\n--- Clearing memory before the next experiment cycle ---")
         del df_filtered, train_data, val_data, test_data
         gc.collect()
 
     print("\n\n" + "="*60)
-    print("      RIEPILOGO FINALE DI TUTTI GLI ESPERIMENTI     ")
+    print("      FINAL SUMMARY OF ALL EXPERIMENTS     ")
     print("="*60)
 
     if not all_results:
-        print("Nessun risultato da mostrare. Controllare i filtri e i dati di input.")
+        print("No results to display. Check filters and input data.")
         return
 
     results_df = pd.DataFrame(all_results)
@@ -594,4 +591,5 @@ def main():
     print(results_df[final_columns].round(4))
 
 if __name__ == "__main__":
+
     main()
