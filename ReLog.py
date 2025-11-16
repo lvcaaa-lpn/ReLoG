@@ -305,7 +305,7 @@ def train_evaluate_xgboost(X_train, y_train, X_val, y_val, X_test, y_test):
     model = xgb.train(params, dtrain, num_boost_round=2000,
                       evals=[(dtrain, 'train'), (dval, 'eval')], early_stopping_rounds=30, verbose_eval=False)
     training_time = time.time() - start_time
-    print(f"  - Tempo di addestramento: {training_time:.2f} secondi")
+    print(f"  - Training time: {training_time:.2f} secondi")
 
     start_time_inf = time.time()
     y_pred_proba = model.predict(dtest)
@@ -593,3 +593,4 @@ def main():
 if __name__ == "__main__":
 
     main()
+
