@@ -19,13 +19,13 @@ This approach combines the rich semantic information from natural language with 
 
 ## Getting Started
 
-1.  **Install the required dependencies:**
+1.  **Install the required dependencies:**  
     The `requirements.txt` file lists all necessary libraries. Install them using pip:
     ```bash
     pip install -r requirements.txt
     ```
 
-2.  **Download the datasets:**
+2.  **Download the datasets:**  
     The scripts require the **Amazon Review Data**, specifically the "Amazon Fashion" and "All Beauty" subsets.
     - Download the review files (`Amazon_Fashion.json.gz`, `All_Beauty.json.gz`) and metadata files (`meta_Amazon_Fashion.json.gz`, `meta_All_Beauty.json.gz`).
     - **Place the `.gz` files in the root directory of this project.**
