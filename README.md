@@ -16,7 +16,6 @@ This approach combines the rich semantic information from natural language with 
   - [Main Experiments (Ablation Study)](#1--main-experiments-ablation-study)
   - [Cold-Start Evaluation](#2--cold-start-evaluation)
 - [Code Overview](#code-overview)
-- [Citation](#citation)
 
 ## Getting Started
 
