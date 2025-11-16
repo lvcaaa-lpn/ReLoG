@@ -33,7 +33,7 @@ This approach combines the rich semantic information from natural language with 
 
 ## Running the Experiments
 
-The repository includes two main scripts to reproduce the results from the paper.
+The repository includes two main scripts.
 
 ### 1. Main Experiments (Ablation Study)
 
