@@ -37,7 +37,7 @@ The repository includes two main scripts.
 
 ### 1. Main Experiments (Ablation Study)
 
-The `ablation.py` script runs the complete pipeline described in the paper. It performs data preprocessing, trains the ReLoG model with different configurations (embedders and classifiers), and evaluates its performance.
+The `ablation.py` script performs data preprocessing, trains the ReLoG model with different configurations (embedders and classifiers), and evaluates its performance.
 
 To run this script, simply execute:
 ```bash
