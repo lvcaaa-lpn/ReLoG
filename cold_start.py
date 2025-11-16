@@ -155,8 +155,8 @@ def load_and_preprocess_data(review_path, meta_path, sample_frac=None, min_user_
     return df_filtered
 
 def split_data_by_user(df):
-    # Divide il dataset in train, validation e test set mantenendo gli utenti separati.
-    print("[FASE 1] Suddivisione degli utenti in train/val/test...")
+    # Splits the dataset into train, validation, and test sets, keeping users disjoint.
+    print("[PHASE 1] Splitting users into train/val/test...")
     all_users = df['user_id'].unique()
     train_val_users, test_users = train_test_split(all_users, test_size=0.15, random_state=42)
     train_users, val_users = train_test_split(train_val_users, test_size=(0.10/0.85), random_state=42)
@@ -165,23 +165,21 @@ def split_data_by_user(df):
     val_data = df[df['user_id'].isin(val_users)].copy()
     test_data = df[df['user_id'].isin(test_users)].copy()
 
-    print(f"Utenti: {len(train_users)} train, {len(val_users)} validation, {len(test_users)} test.")
+    print(f"Users: {len(train_users)} train, {len(val_users)} validation, {len(test_users)} test.")
     return train_data, val_data, test_data
-
+    
 def generate_embeddings(sbert_model, model_name_str, train_df, val_df, test_df):
-    # Calcola gli embedding per recensioni e prodotti.
-    print(f"[FASE 2] Calcolo embedding con il modello '{model_name_str}'...")
+    # Computes embeddings for reviews and products.
+    print(f"[PHASE 2] Computing embeddings with model '{model_name_str}'...")
 
+    # Review embeddings
     for df, name in [(train_df, "Train"), (val_df, "Validation"), (test_df, "Test")]:
-      if df.empty:
-          print(f"  - Saltando il calcolo embedding per il {name} Set (vuoto).")
-          continue
+        print(f"  - Computing review embeddings for the {name} Set...")
+        texts = df['review_text'].tolist()
+        df['review_emb'] = sbert_model.encode(texts, batch_size=64, show_progress_bar=True).tolist()
 
-      print(f"  - Calcolo embedding recensioni per il {name} Set...")
-      texts = df['review_text'].tolist()
-      df['review_emb'] = sbert_model.encode(texts, batch_size=64, show_progress_bar=True).tolist()
-
-    print("  - Calcolo embedding prodotti...")
+    # Product embeddings (computed only on the training set to prevent data leakage)
+    print("  - Computing product embeddings...")
     train_df.loc[:,'description'] = train_df['description'].apply(lambda x: ' '.join(x) if isinstance(x, list) else str(x))
     train_df.loc[:,'product_text'] = train_df['title'].fillna('') + ' ' + train_df['description'].fillna('')
 
@@ -192,9 +190,9 @@ def generate_embeddings(sbert_model, model_name_str, train_df, val_df, test_df):
     return train_df, val_df, test_df, product_profiles
 
 def build_profiles_and_features(df):
-    # Costruisce i profili utente (positivi/negativi, categorie/prezzi preferiti) e i fallback generici.
-    print("[FASE 3] Costruzione profili utente e features...")
-
+    # Builds user profiles (positive/negative, preferred categories/prices) and generic fallbacks.
+    print("[PHASE 3] Building user profiles and features...")
+    
     user_fav_tier = {}
     user_fav_cat = {}
     for user in df['user_id'].unique():
@@ -230,7 +228,7 @@ def build_profiles_and_features(df):
     return df, profiles
 
 def prepare_model_data(df, product_profiles, profiles, sbert_model=None):
-    # Prepara i vettori di feature (X) e le etichette (y) per il modello.
+    # Prepares the feature vectors (X) and labels (y) for the model.
     x, y = [], []
     EMBEDDING_DIM = len(profiles["fallback_emb"])
 
@@ -242,10 +240,10 @@ def prepare_model_data(df, product_profiles, profiles, sbert_model=None):
         user_id, product_id = row['user_id'], row['product_id']
 
         if product_id in product_profiles:
-          # Caso "Warm": l'embedding del prodotto è pre-calcolato
+          # "Warm" case:
           prod_emb = np.array(product_profiles.get(product_id))
         elif sbert_model is not None:
-            # Caso "Cold": l'embedding non esiste, lo calcoliamo al volo
+            # "Cold" case:
             product_text = str(row['title']) + ' ' + ' '.join(row['description']) if isinstance(row['description'], list) else str(row['description'])
             prod_emb = sbert_model.encode(product_text)
         else:
@@ -278,8 +276,8 @@ def prepare_model_data(df, product_profiles, profiles, sbert_model=None):
     return np.array(x, dtype=np.float32), np.array(y, dtype=np.float32)
 
 def train_evaluate_xgboost(X_train, y_train, X_val, y_val, X_test, y_test):
-    """Addestra e valuta un classificatore XGBoost."""
-    print("  - Addestramento XGBoost...")
+    # Trains and evaluates an XGBoost classifier.
+    print("  - Training XGBoost...")
     count_neg, count_pos = np.sum(y_train == 0), np.sum(y_train == 1)
     scale_pos_weight = (count_neg / count_pos) * 1.5 if count_pos > 0 else 1
 
@@ -298,7 +296,7 @@ def train_evaluate_xgboost(X_train, y_train, X_val, y_val, X_test, y_test):
     model = xgb.train(params, dtrain, num_boost_round=2000,
                       evals=[(dtrain, 'train'), (dval, 'eval')], early_stopping_rounds=30, verbose_eval=False)
     training_time = time.time() - start_time
-    print(f"  - Tempo di addestramento: {training_time:.2f} secondi")
+    print(f"  - Training time: {training_time:.2f} secondi")
 
     start_time_inf = time.time()
     y_pred_proba = model.predict(dtest)
@@ -308,14 +306,14 @@ def train_evaluate_xgboost(X_train, y_train, X_val, y_val, X_test, y_test):
     model.save_model(model_filename)
     model_size_kb = os.path.getsize(model_filename) / 1024
     os.remove(model_filename)
-    print(f"  - Dimensione modello finale: {model_size_kb:.2f} KB")
+    print(f"  - Final model size: {model_size_kb:.2f} KB")
 
     y_pred = (y_pred_proba > 0.5).astype(int)
 
-    print("  - Risultati XGBoost:")
+    print("  - XGBoost results:")
     print(classification_report(y_test, y_pred, digits=4))
     auc = roc_auc_score(y_test, y_pred_proba)
-    print(f"  - AUC sul Test Set: {auc:.4f}")
+    print(f"  - AUC on Test Set: {auc:.4f}")
 
     return {
         "auc": auc, "f1_macro": f1_score(y_test, y_pred, average='macro'),
@@ -323,18 +321,17 @@ def train_evaluate_xgboost(X_train, y_train, X_val, y_val, X_test, y_test):
         "inference_ms_per_sample": inference_time * 1000,
         "model_size_kb": model_size_kb
     }
-
+    
 # ==============================================================================
-# 5. ORCHESTRAZIONE DEGLI ESPERIMENTI
+# 5. EXPERIMENT
 # ==============================================================================
 
 def main():
-    """Funzione principale che orchestra l'esperimento di valutazione cold-start."""
     df_filtered = load_and_preprocess_data("Amazon_Fashion.jsonl.gz", "meta_Amazon_Fashion.jsonl.gz")
 
     df_filtered['specific_category'] = df_filtered['categories'].apply(lambda cat: cat[-1] if isinstance(cat, list) and cat else 'Unknown')
 
-    print("\n[FASE 1.5] Suddivisione dati per scenari Warm, User-Cold, Item-Cold...")
+    print("\n[PHASE 1.5] Splitting data for Warm, User-Cold, and Item-Cold scenarios...")
 
     all_users = df_filtered['user_id'].unique()
     train_val_users, test_users_cold = train_test_split(all_users, test_size=0.15, random_state=42)
@@ -343,43 +340,41 @@ def main():
     all_products = df_filtered['product_id'].unique()
     train_products, test_products_cold = train_test_split(all_products, test_size=0.15, random_state=42)
 
-    # --- Creazione dei DataFrame ---
-    # Set di training: contiene solo utenti e prodotti di training
     train_data = df_filtered[
         df_filtered['user_id'].isin(train_users) &
         df_filtered['product_id'].isin(train_products)
     ]
-    # Set di validazione: utenti di validazione, prodotti di training
+
     val_data = df_filtered[
         df_filtered['user_id'].isin(val_users) &
         df_filtered['product_id'].isin(train_products)
     ]
 
     # SCENARIO 1: WARM START TEST SET
-    # Interazioni di utenti di training su prodotti di training (ma non viste in train_data)
-    # Prendiamo un campione casuale dal set di training e lo rimuoviamo
+    # Interactions from training users on training products (but not seen in train_data)
+    # We take a random sample from the training set and remove it.
     test_data_warm = train_data.sample(frac=0.1, random_state=42)
     train_data = train_data.drop(test_data_warm.index)
 
     # SCENARIO 2: USER COLD-START TEST SET
-    # Interazioni di utenti NUOVI su prodotti NOTI (di training)
+    # Interactions from NEW users on KNOWN (training) products.
     test_data_user_cold = df_filtered[
         df_filtered['user_id'].isin(test_users_cold) &
         df_filtered['product_id'].isin(train_products)
     ]
 
     # SCENARIO 3: ITEM COLD-START TEST SET
-    # Interazioni di utenti NOTI (di training) su prodotti NUOVI
+    # Interactions from KNOWN (training) users on NEW products.
     test_data_item_cold = df_filtered[
         df_filtered['user_id'].isin(train_users) &
         df_filtered['product_id'].isin(test_products_cold)
     ]
 
-    print(f"  - Dati di Training: {len(train_data)} interazioni")
-    print(f"  - Dati di Validazione: {len(val_data)} interazioni")
-    print(f"  - Test 'Warm Start': {len(test_data_warm)} interazioni")
-    print(f"  - Test 'User Cold-Start': {len(test_data_user_cold)} interazioni")
-    print(f"  - Test 'Item Cold-Start': {len(test_data_item_cold)} interazioni")
+    print(f"  - Training Data: {len(train_data)} interactions")
+    print(f"  - Validation Data: {len(val_data)} interactions")
+    print(f"  - Test 'Warm Start': {len(test_data_warm)} interactions")
+    print(f"  - Test 'User Cold-Start': {len(test_data_user_cold)} interactions")
+    print(f"  - Test 'Item Cold-Start': {len(test_data_item_cold)} interactions")
 
 
     try:
@@ -396,7 +391,7 @@ def main():
     final_evaluation_results = []
 
     for model_name in EMBEDDING_MODELS_TO_TEST:
-        print(f"\n{'='*25}\nESPERIMENTO CON EMBEDDER: {model_name}\n{'='*25}")
+        print(f"\n{'='*25}\nEXPERIMENT WITH EMBEDDER: {model_name}\n{'='*25}")
         sbert_model = SentenceTransformer(model_name)
 
         train_emb, _, _, product_profiles = generate_embeddings(sbert_model, model_name, train_data.copy(), pd.DataFrame(), pd.DataFrame())
@@ -405,8 +400,7 @@ def main():
         for df in [val_data, test_data_warm, test_data_user_cold, test_data_item_cold]:
             df['review_emb'] = sbert_model.encode(df['review_text'].tolist(), batch_size=64, show_progress_bar=True).tolist()
 
-        # Fase 4: Preparazione dati per i modelli
-        print("[FASE 4] Preparazione dati per l'addestramento e la valutazione...")
+        print("[PHASE 4] Preparing data for training and evaluation...")
 
         X_val, y_val = prepare_model_data(val_data, product_profiles, user_profiles, sbert_model)
 
@@ -416,7 +410,6 @@ def main():
             "Item Cold-Start": prepare_model_data(test_data_item_cold, product_profiles, user_profiles, sbert_model)
         }
 
-        # Dati di training
         client_data_silos = {user_id: group for user_id, group in train_emb.groupby('user_id')}
         train_user_ids = train_emb['user_id'].unique()
         all_client_features, all_client_labels = [], []
@@ -432,7 +425,7 @@ def main():
         y_train_centralized = np.hstack(all_client_labels)
 
         for classifier_name in CLASSIFIERS_TO_TEST:
-            print(f"\n--- [FASE 5] Training del classificatore: {classifier_name.upper()} ---")
+            print(f"\n--- [PHASE 5] Training the classifier: {classifier_name.upper()} ---")
 
             if classifier_name == 'xgboost':
                 dtrain = xgb.DMatrix(X_train_centralized, label=y_train_centralized)
@@ -440,16 +433,15 @@ def main():
                 params = {'objective': 'binary:logistic', 'eval_metric': 'auc', 'eta': 0.05, 'max_depth': 4}
                 trained_model = xgb.train(params, dtrain, num_boost_round=2000, evals=[(dval, 'eval')], early_stopping_rounds=30, verbose_eval=False)
 
-            # --- Valutazione sui 3 scenari ---
-            print(f"--- [FASE 6] Valutazione di {classifier_name.upper()} sui diversi scenari ---")
+            print(f"--- [PHASE 6] Evaluating {classifier_name.upper()} on the different scenarios ---")
             for scenario_name, (X_test, y_test) in test_sets.items():
                 if len(X_test) == 0: continue
 
                 if classifier_name == 'xgboost':
                     dtest = xgb.DMatrix(X_test)
                     y_pred_proba = trained_model.predict(dtest)
-                else: # MLP
-                    y_pred_proba = trained_model.predict(X_test).flatten()
+                # else: # MLP
+                #    y_pred_proba = trained_model.predict(X_test).flatten()
 
                 y_pred = (y_pred_proba > 0.5).astype(int)
 
@@ -466,15 +458,13 @@ def main():
                     "f1_macro": f1
                 })
 
-    # ==========================================================================
-    # RIEPILOGO FINALE CON TABELLA COMPARATIVA
-    # ==========================================================================
+   
     print("\n\n" + "="*70)
-    print("      RIEPILOGO FINALE DELLE PERFORMANCE COLD-START     ")
+    print("      FINAL SUMMARY OF COLD-START PERFORMANCE     ")
     print("="*70)
 
     if not final_evaluation_results:
-        print("Nessun risultato da visualizzare.")
+        print("No results to display.")
         return
 
     results_df = pd.DataFrame(final_evaluation_results)
@@ -491,10 +481,10 @@ def main():
         values='f1_macro'
     )
 
-    print("\n--- Confronto AUC Score ---\n")
+    print("\n--- AUC Score Comparison ---\n")
     print(auc_pivot.round(4))
 
-    print("\n\n--- Confronto F1-Score (Macro) ---\n")
+    print("\n\n--- F1-Score (Macro) Comparison ---\n")
     print(f1_pivot.round(4))
     print("\n" + "="*70)
 
