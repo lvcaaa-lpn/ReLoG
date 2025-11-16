@@ -36,74 +36,121 @@ CLASSIFIERS_TO_TEST = [
 
 CHUNKSIZE = 50000
 
-def load_and_preprocess_data(review_path, meta_path):
+def load_and_preprocess_data(review_path, meta_path, sample_frac=None, min_user_interactions=5, min_item_interactions=3):
+     # The process is carried out in 3 phases:
+    # 1. PHASE 1: Identify active users (>= min_user_interactions) based on the entire dataset.
+    # 2. PHASE 2: Calculate product counts considering ONLY the interactions of users
+    #    identified in Pass 1. Identify active products (>= min_item_interactions).
+    # 3. PHASE 3: Build the final DataFrame using the stable sets of users and products.
 
-    print("\n[FASE 1] Caricamento e preprocessing dei dati (modalità memory-safe)...")
+    print(f"\n[START] Preprocessing with sequential filtering on " + review_path)
+    print(f"  - Criteria: Users  >= {min_user_interactions}, Prodotti >= {min_item_interactions}")
+    if sample_frac:
+        print(f"--- SAMPLING MODE ACTIVE (fraction={sample_frac}) ---")
 
-    # --- Carica i metadati ---
-    # Il file dei metadati è solitamente più piccolo e può essere caricato interamente.
-    print("  - Caricamento metadati dei prodotti...")
+    print("\n  - Loading and initial metadata filtering...")
     meta = pd.read_json(meta_path, lines=True, compression='gzip')
     meta = meta[['parent_asin', 'title', 'description', 'price', 'categories']]
     meta.columns = ['product_id', 'title', 'description', 'price', 'categories']
-    # Rimuoviamo subito i prodotti con titoli troppo corti o mancanti
     meta.dropna(subset=['title'], inplace=True)
-    meta = meta[meta['title'].str.len() > 10]
+    meta_filtered_title = meta[meta['title'].str.len() > 10].copy()
+    valid_products_by_title = set(meta_filtered_title['product_id'])
 
-    # --- PRIMA PASSATA: Identificazione di utenti e prodotti attivi ---
-    # Leggiamo il file delle recensioni a blocchi solo per contare le occorrenze,
-    # senza tenere i dati in memoria.
-    print("  - Passata 1: Conteggio recensioni per identificare utenti e prodotti attivi...")
+    # --- PHASE 1: IDENTIFY ACTIVE USERS ---
+    print("\n[FASE 1] Passata 1: Identificazione degli utenti attivi...")
     user_counts = Counter()
-    product_counts = Counter()
-
     review_iterator = pd.read_json(review_path, lines=True, compression='gzip', chunksize=CHUNKSIZE)
-
     for i, chunk in enumerate(review_iterator):
-        print(f"\r    - Conteggio nel blocco {i+1}...", end="")
+        print(f"\r    - Conteggio utenti nel blocco {i+1}...", end="")
         user_counts.update(chunk['user_id'])
-        product_counts.update(chunk['asin']) # 'asin' è il product_id nel file originale
-    print("\n  - Conteggio completato.")
+    print("\n  - Conteggio utenti completato.")
 
-    active_users = {user for user, count in user_counts.items() if count >= 5}
-    active_products = {prod for prod, count in product_counts.items() if count >= 3}
+    active_users = {user for user, count in user_counts.items() if count >= min_user_interactions}
+    print(f"  - Identificati {len(active_users)} utenti attivi.")
 
-    print(f"  - Utenti attivi (>= 5 recensioni): {len(active_users)}")
-    print(f"  - Prodotti attivi (>= 3 recensioni): {len(active_products)}")
+    # --- PHASE 2: IDENTIFY ACTIVE PRODUCTS (based on active users) ---
+    print("\n[FASE 2]  PHASE 2: IDENTIFY ACTIVE PRODUCTS (based on PHASE 1 users)...")
+    product_counts = Counter()
+    review_iterator = pd.read_json(review_path, lines=True, compression='gzip', chunksize=CHUNKSIZE)
+    for i, chunk in enumerate(review_iterator):
+        print(f"\r    - Counting products in chunk {i+1}...", end="")
+        chunk_filtered_users = chunk[chunk['user_id'].isin(active_users)]
+        product_counts.update(chunk_filtered_users['asin'])
+    print("\n  - Product count completed.")
 
-    del user_counts, product_counts
+    active_products = {prod for prod, count in product_counts.items() if count >= min_item_interactions}
+    print(f"  - Identified {len(active_products)} active products.")
+    del product_counts
     gc.collect()
 
-    print("  - Passata 2: Filtraggio e costruzione del DataFrame finale...")
+    final_active_products = active_products.intersection(valid_products_by_title)
+    print(f"  - {len(final_active_products)} products remain after title filter.")
+
+        # --- SAMPLING PHASE ---
+    if sample_frac is not None and 0 < sample_frac < 1:
+        print("\n[FASE X] Performing stratified sampling...")
+
+        active_user_counts_df = pd.DataFrame(
+            [(user, count) for user, count in user_counts.items() if user in active_users],
+            columns=['user_id', 'review_count']
+        ).set_index('user_id')
+
+        try:
+            strata = pd.qcut(active_user_counts_df['review_count'], q=4, labels=False, duplicates='drop')
+        except ValueError:
+            print("    - Warning: could not create 4 strata, falling back to 2.")
+            strata = pd.qcut(active_user_counts_df['review_count'], q=2, labels=False, duplicates='drop')
+
+        sampled_user_ids = strata.groupby(strata).apply(
+            lambda x: x.sample(frac=sample_frac, random_state=42)
+        ).index.get_level_values(1)
+
+        final_user_set = set(sampled_user_ids)
+        print(f"    - Users before sampling: {len(active_users)}. Sampled users: {len(final_user_set)}.")
+    else:
+        # If no sampling, use all active users
+        final_user_set = active_users
+
+    del user_counts 
+    gc.collect()
+
+    # --- PHASE 3: BUILD FINAL DATAFRAME ---
+    print("\n[FASE 3] PHASE 3: Building the final DataFrame...")
     filtered_chunks = []
     review_iterator = pd.read_json(review_path, lines=True, compression='gzip', chunksize=CHUNKSIZE)
-
     for i, chunk in enumerate(review_iterator):
-        print(f"\r    - Filtraggio del blocco {i+1}...", end="")
-        chunk = chunk[['user_id', 'asin', 'text', 'rating']]
+        print(f"\r    - Filtering chunk {i+1}...", end="")
+
+        chunk = chunk[chunk['user_id'].isin(final_user_set)]
+        chunk = chunk[chunk['asin'].isin(final_active_products)]
+
+        if chunk.empty:
+            continue
+
+        chunk = chunk[['user_id', 'asin', 'text', 'rating', 'timestamp']] 
         chunk.rename(columns={'asin': 'product_id', 'text': 'review_text'}, inplace=True)
 
-        chunk = chunk[chunk['user_id'].isin(active_users)]
-        chunk = chunk[chunk['product_id'].isin(active_products)]
-
-        merged_chunk = pd.merge(chunk, meta, on='product_id', how='inner')
-
+        merged_chunk = pd.merge(chunk, meta_filtered_title, on='product_id', how='inner')
         if not merged_chunk.empty:
             filtered_chunks.append(merged_chunk)
 
-    print("\n  - Concatenazione dei blocchi filtrati...")
+    print("\n  - Concatenating final chunks...")
     if not filtered_chunks:
-        raise ValueError("Nessun dato rimasto dopo il filtraggio. Controlla i percorsi dei file e i criteri di filtro.")
+        raise ValueError("No data left after filtering.")
 
     df_filtered = pd.concat(filtered_chunks, ignore_index=True)
 
-    final_columns = ['user_id', 'product_id', 'review_text', 'rating', 'title', 'description', 'price', 'categories']
-    df_filtered = df_filtered[final_columns]
-
-    print(f"  - Processo completato. Dataset finale: {len(df_filtered)} recensioni.")
-
-    del filtered_chunks, meta
-    gc.collect()
+    # --- Final statistics ---
+    print("\n" + "="*50)
+    print("      FINAL DATASET STATISTICS     ")
+    print("="*50)
+    final_users = df_filtered['user_id'].nunique()
+    final_reviews = len(df_filtered)
+    print(f"  - Total Number of Reviews: {final_reviews}")
+    print(f"  - Unique Users: {final_users}")
+    print(f"  - Unique Products: {df_filtered['product_id'].nunique()}")
+    print(f"  - Average Reviews per User: {final_reviews / final_users:.2f}")
+    print("="*50 + "\n")
 
     return df_filtered
 
