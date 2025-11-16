@@ -36,11 +36,11 @@ The repository includes two main scripts.
 
 ### 1. Main Experiments (Ablation Study)
 
-The `ablation.py` script performs data preprocessing, trains the ReLoG model with different configurations (embedders and classifiers), and evaluates its performance.
+The `ReLoG.py` script performs data preprocessing, trains the ReLoG model with different configurations (embedders and classifiers), and evaluates its performance.
 
 To run this script, simply execute:
 ```bash
-python ablation.py
+python ReLoG.py
 ```
 >[!NOTE]
 >*The script name in your repository might be different. Please adjust the command accordingly.*
@@ -49,21 +49,21 @@ The script will print the final performance metrics to the console.
 
 ### 2. Cold-Start Evaluation
 
-The `coldstart.py` script creates three disjoint test sets to simulate different scenarios:
+The `cold_start.py` script creates three disjoint test sets to simulate different scenarios:
 - **Warm-Start**: Known users interacting with known items.
 - **User Cold-Start**: New users interacting with known items.
 - **Item Cold-Start**: Known users interacting with new items.
 
 To run the cold-start evaluation, execute:
 ```bash
-python coldstart.py
+python cold_start.py
 ```
 The script will train the model and then report the AUC and F1-score for each of the three scenarios in a comparative table.
 
 ## Code Overview
 
--   `ablation.py`: this is the core implementation of our framework. It contains the full data processing pipeline, feature construction logic, and the training/evaluation loops for the models. This file is used to generate the main results and ablation studies.
+-   `ReLoG.py`: this is the core implementation of our framework. It contains the full data processing pipeline, feature construction logic, and the training/evaluation loops for the models. This file is used to generate the main results and ablation studies.
 
--   `coldstart.py`: this script adapts the main pipeline to specifically test the model's robustness in cold-start scenarios. It handles the logic for splitting the data into "warm", "user-cold", and "item-cold" sets to provide a detailed performance breakdown under these challenging conditions.
+-   `cold_start.py`: this script adapts the main pipeline to specifically test the model's robustness in cold-start scenarios. It handles the logic for splitting the data into "warm", "user-cold", and "item-cold" sets to provide a detailed performance breakdown under these challenging conditions.
 
 -   `requirements.txt`: a file listing all the Python libraries and their specific versions needed to run the code, ensuring reproducibility.
