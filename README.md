@@ -26,7 +26,7 @@ The main libraries used are: `pandas`, `numpy`, `torch`, `sentence-transformers`
 If you have a GPU available, the notebook will use it automatically (`device = ‘cuda’ if torch.cuda.is_available() else ‘cpu’`); otherwise, it will run on the CPU as well, but more slowly (especially when calculating SBERT embeddings).
 
 ### Data
-The notebook expects two pre-processed **Parquet** files:
+The notebook expects two pre-processed **Parquet** files (e.g. `electronics_review.parquet` and `electronics_meta.parquet`):
 - `electronics_review.parquet` — user-item interactions (reviews), with columns such as `user_id_int`, `item_id_int`, `timestamp`, `summary`, and `reviewText`.
 - `electronics_meta.parquet` — item metadata, with a `meta_text` column.
 In the notebook, these files are loaded using a relative path:
