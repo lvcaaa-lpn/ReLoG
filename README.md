@@ -67,5 +67,6 @@ The notebook is organized into the following sections:
 ## Output
 For each seed run, the notebook prints:
 - **HR@K** and **NDCG@K** for warm users (last interaction, leave-one-out).
-- **HR@K** and **NDCG@K** for unseen users, in the **1-shot**, **2-shot**, **3-shot**, and **full** regimes.  
+- **HR@K** and **NDCG@K** for unseen users, in the **1-shot**, **2-shot**, **3-shot**, and **full** regimes.
+
 Upon completion, if multiple seeds were run, a summary table is printed showing the **mean ± standard deviation** for each scenario.
