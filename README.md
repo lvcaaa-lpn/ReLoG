@@ -37,7 +37,7 @@ df_meta_aligned = pd.read_parquet(‘../../preprocessing/electronics_meta.parque
 Update these paths based on where you store your preprocessed data.
  
 ## Running the Experiment
-Unlike a pipeline with separate scripts, the entire workflow (preprocessing, federated training, evaluation) is contained in a **single Jupyter notebook**: `ReLoG_dif_seed__1_.ipynb`.
+Unlike a pipeline with separate scripts, the entire workflow (preprocessing, federated training, evaluation) is contained in a **single Jupyter notebook**: `ReLoG.ipynb`.
  
 To run it:
 1. Open the notebook and run the cells in order from top to bottom.
