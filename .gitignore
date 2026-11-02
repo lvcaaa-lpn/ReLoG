@@ -1,0 +1,5 @@
+preprocessing/*.parquet
+preprocessing/*.json.gz
+*.json.gz
+.ipynb_checkpoints/
+__pycache__/
